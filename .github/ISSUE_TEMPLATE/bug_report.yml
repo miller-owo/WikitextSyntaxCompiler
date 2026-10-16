@@ -1,0 +1,76 @@
+name: Bug report
+description: Something compiles wrongly, crashes, or hangs
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a crash, a hang, or anything that looks like a denial of service, read
+        [SECURITY.md](https://github.com/miller-owo/WikitextSyntaxCompiler/blob/main/SECURITY.md) first and
+        report it privately instead.
+
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The wikitext that triggers it. Include the template or module source if the page needs one.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The output you got. Paste it rather than describing it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: If you are comparing against MediaWiki, say which page or which behaviour, and link to it.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `cargo run -p wikitext-cli -- --version`, or the crate version.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Rust library
+        - Command line
+        - C ABI
+        - Go
+        - Node.js
+        - WebAssembly
+        - Format conversion
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options in use
+      description: Any non-default settings, and whether a template resolver or Lua module provider was configured.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: This is not a security issue, or I have read SECURITY.md and will report it privately
+          required: true
+        - label: I searched the existing issues
+          required: true

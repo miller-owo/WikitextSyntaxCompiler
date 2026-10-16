@@ -1,0 +1,18 @@
+[package]
+name = "wikitext-ffi"
+description = "C ABI for the wikitext compiler, for Go, Node.js, C#, Java, Ruby, PHP and anything else that can call a shared library"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "wikitext"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+wikitext = { workspace = true, features = ["lua"] }
+wikitext-convert = { workspace = true }

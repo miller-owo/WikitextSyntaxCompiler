@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  msrv:
+    name: Minimum supported Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.75.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      # wikitext-node is left out: napi-build needs 1.77, which its own
+      # rust-version records.
+      - name: Build at the workspace floor
+        run: cargo build --workspace --exclude wikitext-node --all-features
+
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p wikitext-wasm --features wasm --target wasm32-unknown-unknown --release
+
+  c:
+    name: C ABI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the shared library
+        run: cargo build -p wikitext-ffi --release
+
+      - name: Compile and run the smoke test
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -I crates/wikitext-ffi/include \
+            -o smoke crates/wikitext-ffi/tests/c/smoke.c \
+            -L target/release -lwikitext
+          LD_LIBRARY_PATH=target/release ./smoke
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the shared library
+        run: cargo build -p wikitext-ffi --release
+
+      - name: Test
+        working-directory: bindings/go
+        env:
+          CGO_CFLAGS: -I${{ github.workspace }}/crates/wikitext-ffi/include
+          CGO_LDFLAGS: -L${{ github.workspace }}/target/release -lwikitext
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: go test -count=1 ./...
+
+  node:
+    name: Node.js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the addon
+        run: cargo build -p wikitext-node
+
+      # The test script copies the cdylib to the .node name Node expects.
+      - name: Test
+        run: node bindings/node/test.mjs

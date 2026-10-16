@@ -1,0 +1,22 @@
+[package]
+name = "wikitext"
+description = "A from-scratch Wikitext → HTML compiler: preprocessor, lexer, DOM builder and HTML serializer"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Optional: only the module runner needs an interpreter, so the core crate
+# keeps its zero-dependency build by default.
+wikitext-lua = { workspace = true, optional = true }
+
+[features]
+default = []
+# Enables `LuaModules`, which runs `{{#invoke:…}}` with the bundled Lua
+# interpreter. See `wikitext::lua_modules`.
+lua = ["dep:wikitext-lua"]
+

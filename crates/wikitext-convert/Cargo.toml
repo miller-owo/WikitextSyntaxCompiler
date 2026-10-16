@@ -1,0 +1,15 @@
+[package]
+name = "wikitext-convert"
+description = "Converts between wikitext, HTML and Markdown"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+html5ever = "0.39"
+markup5ever_rcdom = "0.39"
+wikitext = { workspace = true }

@@ -1,0 +1,22 @@
+[package]
+name = "wikitext-wasm"
+description = "WebAssembly bindings for the wikitext compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wikitext = { workspace = true, features = ["lua"] }
+wikitext-convert = { workspace = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]

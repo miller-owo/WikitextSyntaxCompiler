@@ -1,0 +1,33 @@
+name: Feature request
+description: Syntax that should be supported, or an API that should exist
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Missing wikitext syntax is a bug rather than a feature, so it can also go in
+        a bug report. Use this for new capabilities and API changes.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that you cannot do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: If this concerns wikitext syntax, give a small example and the HTML MediaWiki produces for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including whether you can solve it today with a template resolver or a Lua module.
+    validations:
+      required: false

@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lua",
+    "crates/wikitext",
+    "crates/wikitext-cli",
+    "crates/wikitext-ffi",
+    "crates/wikitext-node",
+    "crates/wikitext-convert",
+    "crates/wikitext-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "BSD-2-Clause"
+repository = "https://github.com/miller-owo/WikitextSyntaxCompiler"
+authors = ["MELLER_OwO"]
+
+[workspace.dependencies]
+wikitext-convert = { path = "crates/wikitext-convert" }
+wikitext = { path = "crates/wikitext", version = "0.1.0" }
+wikitext-lua = { path = "crates/lua", version = "0.1.0" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

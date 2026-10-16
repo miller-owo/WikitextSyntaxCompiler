@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/miller-owo/WikitextSyntaxCompiler/security/advisories/new
+    about: Report a vulnerability privately. Do not open a public issue for it.
+  - name: Contributing guide
+    url: https://github.com/miller-owo/WikitextSyntaxCompiler/blob/main/CONTRIBUTING.md
+    about: Setup, the checks that must pass, and the conventions this repository follows.

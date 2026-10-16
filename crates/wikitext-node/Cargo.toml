@@ -1,0 +1,22 @@
+[package]
+name = "wikitext-node"
+description = "Node.js bindings for the wikitext compiler"
+version.workspace = true
+edition.workspace = true
+# napi-build emits cargo:: instructions, which need 1.77, so this crate\n# cannot follow the workspace's lower floor.\nrust-version = "1.77"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wikitext = { workspace = true, features = ["lua"] }
+wikitext-convert = { workspace = true }
+napi = { version = "3", default-features = false, features = ["napi6"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"

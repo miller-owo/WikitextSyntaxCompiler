@@ -1,0 +1,6 @@
+# One line ending everywhere. PowerShell writes CRLF by default, which silently
+# rewrites whole files, so the rule lives here rather than in habit.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.wasm binary
