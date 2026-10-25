@@ -6,6 +6,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-10-25
+
 ### Fixed
 
 - **Multi-line block HTML.** A line that starts with a block-level tag opens a raw
@@ -18,6 +22,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{{{caption|…}}}</div>`, is now written through and the paragraph is flushed
   around it. It used to be escaped as text, leaving the wrapper open for the rest of
   the page.
+- **Footnotes.** A citation is a superscript `[1]` that links to its note, numbered
+  within its group rather than across the page, and the note links back to
+  `cite_ref-…`. It used to be a bare `↑` at the point of citation.
+- **List items.** An item attached below the list as soon as the next one started
+  kept its source text, so `'''bold'''` and links inside it were literal. Every
+  item's inline markup is parsed now, not only the frames still open at the end.
+- **Section links.** `[[Page#Section]]` encoded the `#` into the title, so it
+  pointed at a page named `Page#Section`. The fragment is split off before encoding,
+  and `[[#Section]]` becomes an anchor in the current document.
+- **Entities before multi-byte text.** The entity scan looked through a 34-byte
+  window that could end inside a multi-byte character, and slicing there panicked
+  whenever a character straddled the limit. `decode_entities` and `scan_entity` both
+  back the limit up to a character boundary now.
 - **Image alignment.** `right` and `left` on an image now become MediaWiki's
   `floatright`/`floatleft` classes, and a picture alone on a line is emitted as a
   block instead of a paragraph, so a template's float layout renders in place.
@@ -32,6 +49,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps `<includeonly>` and drops `<noinclude>`. Both markers are removed before
   expansion, so they may span lines, and a template's documentation panel no longer
   disappears when the template page itself is previewed.
+- **Behaviour switches are consumed.** `__NOTOC__`, `__NOINDEX__` and the rest of
+  MediaWiki's double-underscore switches are removed from the output rather than
+  rendered as text. A template usually carries them in its `<includeonly>` half, so
+  the pass has to run on the expanded text and not only on the page source.
+- **Comments from templates are dropped**, as MediaWiki drops them, instead of
+  reaching the page.
 
 ## [0.1.0]
 
@@ -83,5 +106,6 @@ The first version. Everything below is new.
 - `mw.loadData` is not supported, and `mw.site` and `mw.message` are empty, because
   there is no data source behind them here.
 
-[Unreleased]: https://github.com/miller-owo/WikitextSyntaxCompiler/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/miller-owo/WikitextSyntaxCompiler/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/miller-owo/WikitextSyntaxCompiler/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/miller-owo/WikitextSyntaxCompiler/releases/tag/v0.1.0
