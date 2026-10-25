@@ -4,6 +4,14 @@ This records the decisions in this project that are **not obvious**, and why the
 were made that way. Read it before changing code, especially the quote engine and
 the list state machine.
 
+**Hard constraint: no GNU-licensed content may enter this repository.** Not GPL,
+LGPL, AGPL or GFDL, in any version, as code, documentation, test fixture or data,
+whether copied, ported, translated, linked or vendored, in any crate and at any
+depth of the dependency graph. This outranks every other decision recorded below:
+where a feature has no permissively licensed source, it is written from public
+documentation and observed behaviour instead. Section 14 records the reasoning and
+the checks.
+
 ## 1. Pipeline
 
 ```
@@ -440,9 +448,39 @@ evaluator and date calculation is written here. The only optional dependencies a
 WASM, plus `html5ever` and its companion crates (MIT OR Apache-2.0) for conversion
 and `napi`, `napi-derive` and `napi-build` (MIT) for the Node addon.
 
-**There is no GPL code anywhere**: Parsoid (GPL-2.0+) was not ported, MediaWiki core
-(GPL-2.0+) was not ported, and `parse_wiki_text` (a GPL-family crate) is not linked.
-Only public syntax documentation and observable behaviour were used.
+**There is no GNU-licensed content anywhere, and none may be added.** GPL, LGPL, AGPL
+and GFDL are all excluded, every version: no code copied, ported, translated or
+mechanically rewritten, no dependency linked or vendored at any depth, and no
+documentation text, help string or test fixture lifted from a GNU-licensed source.
+"Adapted" counts as much as "copied": renaming and reformatting a GPL file leaves it
+under the GPL. Parsoid (GPL-2.0+) was not ported, MediaWiki core (GPL-2.0+) was not
+ported, Scribunto was not ported, and `parse_wiki_text` is not linked. That crate is
+sometimes assumed to be GPL family; its `LICENSE` is plain MIT, so it would have been
+permissible, and it is simply not used. Only public syntax documentation and
+observable behaviour were used. **A source whose license is unclear or absent is
+treated as GNU-licensed and rejected**, not investigated until it looks safe.
+
+**Facts were taken, sentences and code were not.** A rule table, a list of magic
+words, a numeric constant or the shape of an output is a fact and carries no
+copyright; the prose and source that state it do. Reading a GPL program's
+documentation or watching what it emits is allowed. Copying its text, commenting its
+code, or paraphrasing it line by line is introducing GNU-licensed content even when
+no verbatim line survives. A snippet from a forum, a blog or an issue is judged by
+its own license, not by the repository it appeared in.
+
+This was checked rather than assumed: comment n-grams, string literals, function name
+sets and numeric constants were compared against MediaWiki core, Parsoid, Scribunto,
+ParserFunctions and PUC-Lua. Nothing matched. Repeat it after any change to the quote
+engine, the preprocessor or `#expr`, and calibrate the probe first, because a probe
+that is subtly blind reports a clean zero.
+
+**The rule is enforced at release, not trusted.** `cargo tree --workspace
+--all-features` must contain nothing matching `gpl`, `agpl` or `lgpl`; `RELEASING.md`
+carries the command (`Select-String` instead of `grep` on Windows). If `cargo-deny` is
+available, `cargo deny check licenses` is stronger. A dependency that fails the check
+is removed rather than waived, and a license that is none of the five already in
+`THIRD-PARTY-NOTICES.md` is the case to stop and look at. `CONTRIBUTING.md` states the
+same rule for contributors.
 
 Every crate in the resolved graph is MIT, Apache-2.0, ISC, Unicode-3.0, Unlicense or
 BSD-2-Clause, which is one license family wider than "MIT or Apache-2.0" alone. The
