@@ -43,6 +43,19 @@ cargo tree --workspace --all-features | grep -iE "gpl|agpl|lgpl"
 An empty result is what you want. If `cargo-deny` is available, `cargo deny check
 licenses` is stronger.
 
+Then make sure the attribution file still matches the tree. It carries the copyright
+line and the license text of every crate in `Cargo.lock`, which is the part a binary
+distribution has to reproduce:
+
+```sh
+pwsh -File scripts/third-party-notices.ps1
+git diff --stat THIRD-PARTY-NOTICES.md
+```
+
+A diff means a dependency moved, and the new rows have to be looked at. A crate whose
+license is not one of the five texts already in the file is the case worth stopping
+for.
+
 ### 4. Make sure nothing generated is committed
 
 ```sh

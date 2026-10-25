@@ -83,7 +83,10 @@ cargo tree -p <crate>
 cargo deny check licenses     # if you have cargo-deny
 ```
 
-Permissive licenses already in use: MIT, Apache-2.0, BSD-2-Clause.
+Permissive licenses already in use: MIT, Apache-2.0, ISC, the Unicode license, the
+Unlicense and BSD-2-Clause. A new dependency also means regenerating
+`THIRD-PARTY-NOTICES.md`, because MIT and ISC require their copyright notice to travel
+with a binary, and that file is where it travels.
 
 ### Code
 

@@ -444,6 +444,13 @@ and `napi`, `napi-derive` and `napi-build` (MIT) for the Node addon.
 (GPL-2.0+) was not ported, and `parse_wiki_text` (a GPL-family crate) is not linked.
 Only public syntax documentation and observable behaviour were used.
 
+Every crate in the resolved graph is MIT, Apache-2.0, ISC, Unicode-3.0, Unlicense or
+BSD-2-Clause, which is one license family wider than "MIT or Apache-2.0" alone. The
+date conversion in `preprocess/functions.rs` follows Howard Hinnant's public-domain
+algorithms, which owes no attribution but is recorded at the function. `THIRD-PARTY-NOTICES.md`
+carries the per-crate copyright lines and the five license texts, and
+`scripts/third-party-notices.ps1` regenerates it from `Cargo.lock`.
+
 ## 15. Known tradeoffs
 
 | Tradeoff | Reason |

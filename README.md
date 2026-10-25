@@ -413,10 +413,16 @@ Output targets an HTML5 fragment shaped like MediaWiki's server-side output:
 block elements newline-separated, `td` and `th` kept on their row's line. It
 is not guaranteed to match byte for byte.
 
-Everything in the dependency tree is permissively licensed: `html5ever`,
-`markup5ever` and `tendril` (MIT OR Apache-2.0), `clap` (MIT OR Apache-2.0),
-`wasm-bindgen` (MIT OR Apache-2.0), and `napi`, `napi-derive`, `napi-build`
-(MIT). No copyleft anywhere in the tree.
+Everything in the dependency tree is permissively licensed. Most of it is
+`MIT OR Apache-2.0`: `html5ever`, `markup5ever`, `tendril`, `clap`, `wasm-bindgen`
+and the crates behind them. `napi`, `napi-derive` and `napi-build` are MIT,
+`libloading` (which `napi-sys` loads native libraries through) is ISC, `memchr` is
+`Unlicense OR MIT`, and `unicode-ident` is `(MIT OR Apache-2.0) AND Unicode-3.0`.
+No copyleft anywhere in the tree.
+
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) repeats that list with the
+copyright line and the full license text for each crate, which is what a binary
+distribution has to reproduce.
 
 ## Contributing
 
@@ -429,7 +435,9 @@ repository holds to. The short version:
   to break something here.
 - Comments are the exception, not the default. Write one only when the code cannot
   carry the information itself, and never to restate what the code does.
-- No copyleft, at any depth of the dependency tree. MIT, Apache-2.0 and BSD only.
+- No copyleft, at any depth of the dependency tree. Every crate is MIT, Apache-2.0,
+  ISC, Unicode-3.0, Unlicense or BSD, and `THIRD-PARTY-NOTICES.md` is regenerated
+  when one is added.
 - A robustness fix needs a fuzz case, and its complexity claim confirmed by doubling
   input sizes rather than by a single timing.
 

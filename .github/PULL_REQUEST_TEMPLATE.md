@@ -27,6 +27,7 @@ If this touches a binding, say which and paste the result:
      follow-up you did not do. -->
 
 - [ ] Comments follow the house style: only where the code cannot say it itself
-- [ ] No new dependency, or the license was checked and is permissive
+- [ ] No new dependency, or the license was checked and is permissive, and
+      `scripts/third-party-notices.ps1` was run
 - [ ] Documentation updated if the public surface changed
 - [ ] `AGENTS.md` updated if this makes a decision a future reader could not infer
