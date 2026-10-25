@@ -95,11 +95,26 @@ fn main() {
             ("nesting: italics", "''", "''"),
             ("nesting: ref", "<ref>", "</ref>"),
             ("nesting: gallery", "<gallery>", "</gallery>"),
+            ("nesting: noinclude", "<noinclude>", "</noinclude>"),
+            ("nesting: includeonly", "<includeonly>", "</includeonly>"),
         ] {
             let source = format!("{}{}{}", repeated(open, depth), "x", repeated(close, depth));
             if source.len() <= big * 4 {
                 check(&format!("{name} x{depth}"), source, budget, &mut findings);
             }
+        }
+    }
+    // Unclosed markers put the whole tail inside one suppression scope; a scan
+    // that tested the open stack per marker would be quadratic here.
+    for count in [5_000usize, 10_000, 20_000] {
+        let source = format!("{}x", repeated("<noinclude>", count));
+        if source.len() <= big * 4 {
+            check(
+                &format!("unclosed noinclude x{count}"),
+                source,
+                budget,
+                &mut findings,
+            );
         }
     }
 

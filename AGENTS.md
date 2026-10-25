@@ -145,11 +145,30 @@ stored as a raw node in `References`, and `parse_reference_text` runs inline par
 over it when `<references/>` renders. This is one instance of lazy parsing, the same
 idea as lazy template argument evaluation.
 
-**Content that does not render still has to be consumed.**
-`<noinclude>`/`<includeonly>` control transclusion only and are not shown when
-reading, and `<templatedata>`, `<indicator>` and `<categorytree>` render empty. The
-content of these tags **must be consumed**, or body text leaks into the page. The
-`noinclude_is_dropped` test pins this down.
+**Transclusion markers belong to the preprocessor, not the parser.**
+`<noinclude>` and `<includeonly>` mean opposite things depending on who reads the
+page: a page shows its `<noinclude>` text and hides `<includeonly>`, while a
+transcluded template body does the reverse. They are resolved in one scan over the
+whole source before expansion (`resolve_include_tags`), which also lets a marker
+span lines; by the time the parser runs, no marker is left. `<templatedata>`,
+`<indicator>` and `<categorytree>` still reach the parser and render empty, and
+their content **must be consumed**, or body text leaks into the page.
+
+**Block-level HTML is written through, not balanced.** `<div style="…">` on a line
+of its own opens an element that later lines fill, so the per-line inline parser can
+never balance it against its closer; it used to keep the tag as escaped text. A line
+that starts with a block-level tag is now parsed in HTML-block mode: a block tag
+with no closer on that line becomes a raw node, exactly as MediaWiki writes it, and
+the browser pairs it with the `</div>` that appears later. Text between the tags is
+still parsed as wikitext, which is why `'''bold'''` inside a one-line `<div>` stays
+bold. The recovery path for a genuinely unmatched tag is unchanged everywhere else.
+
+The parser also keeps a stack of raw block tags that are still open, because a
+closer may follow text (`{{{caption|…}}}</div>`) rather than start a line. A
+matched closer is written through and the pending paragraph is flushed around it.
+A picture alone on a line is emitted as a block node instead of a `<p>`, and the
+`right`/`left` image options add MediaWiki's `floatright`/`floatleft` classes so a
+template's div layout survives the preview.
 
 ## 7. Lua interpreter (`crates/lua`)
 

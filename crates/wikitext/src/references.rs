@@ -34,41 +34,52 @@ impl References {
 
     pub fn cite(&mut self, group: &str, name: Option<&str>, content: Vec<Node>) -> Vec<Node> {
         let group = group.trim().to_string();
-        if let Some(name) = name {
+        let index = if let Some(name) = name {
             let key = (group.clone(), name.to_string());
-            if let Some(index) = self.by_name.get(&key).copied() {
-                let entry = &mut self.entries[index];
-                entry.count += 1;
-                let count = entry.count;
-                let id = entry.id.clone();
-                return vec![backlink(&id, count)];
+            match self.by_name.get(&key).copied() {
+                Some(index) => {
+                    self.entries[index].count += 1;
+                    index
+                }
+                None => {
+                    let index = self.entries.len();
+                    let id = footnote_id(&group, Some(name), index);
+                    self.entries.push(Reference {
+                        group,
+                        name: Some(name.to_string()),
+                        content,
+                        id,
+                        count: 1,
+                    });
+                    self.by_name.insert(key, index);
+                    index
+                }
             }
+        } else {
             let index = self.entries.len();
-            let id = footnote_id(&group, Some(name), index);
+            let id = footnote_id(&group, None, index);
             self.entries.push(Reference {
                 group,
-                name: Some(name.to_string()),
+                name: None,
                 content,
                 id,
                 count: 1,
             });
-            self.by_name.insert(key, index);
-            let id = self.entries[index].id.clone();
-            return vec![backlink(&id, 1)];
-        }
-        let index = self.entries.len();
-        let id = footnote_id(&group, None, index);
-        self.entries.push(Reference {
-            group,
-            name: None,
-            content,
-            id,
-            count: 1,
-        });
-        self.entries
-            .last()
-            .map(|entry| vec![backlink(&entry.id, 1)])
-            .unwrap_or_default()
+            index
+        };
+
+        // Footnote numbers restart per group; a group's citation number is its
+        // position among that group's entries, not among every entry on the page.
+        let group_key = self.entries[index].group.clone();
+        let number = self.entries[..index]
+            .iter()
+            .filter(|entry| entry.group == group_key)
+            .count()
+            + 1;
+        let entry = &self.entries[index];
+        // A citation is a superscript number: the familiar `[1]` in running text,
+        // with an id the reference list can link back to.
+        vec![citation(&entry.id, number, entry.count)]
     }
 
     pub fn render(&self, group: &str) -> Vec<Node> {
@@ -150,20 +161,43 @@ fn list_for(entries: &[&Reference]) -> Element {
     list
 }
 
-fn backlink(id: &str, index: usize) -> Node {
+fn backlink(note_id: &str, reference: usize) -> Node {
     let mut anchor = Element::new("a");
-    anchor.set_attr("href", format!("#{id}"));
+    // The list jumps back to the citation in the text, not to itself.
+    anchor.set_attr("href", format!("#{}", citation_id(note_id, reference)));
 
-    if index == 1 {
+    if reference == 1 {
         anchor.add_class("mw-cite-backlink");
     }
-    let arrow = if index == 1 {
+    let arrow = if reference == 1 {
         "\u{2191}".to_string()
     } else {
-        format!("\u{2191}{index}")
+        format!("\u{2191}{reference}")
     };
     anchor.children.push(Node::text(arrow));
     Node::element(anchor)
+}
+
+fn citation(note_id: &str, number: usize, reference: usize) -> Node {
+    let mut sup = Element::new("sup");
+    sup.set_attr("id", citation_id(note_id, reference));
+    sup.add_class("reference");
+    let mut anchor = Element::new("a");
+    anchor.set_attr("href", format!("#{note_id}"));
+    anchor.children.push(Node::text(format!("[{number}]")));
+    sup.children.push(Node::element(anchor));
+    Node::element(sup)
+}
+
+/// `cite_note-1` for the first citation and `cite_ref-1`, `cite_ref-1_2`, … for
+/// the citations that point at it.
+fn citation_id(note_id: &str, reference: usize) -> String {
+    let base = note_id.replacen("cite_note-", "cite_ref-", 1);
+    if reference <= 1 {
+        base
+    } else {
+        format!("{base}_{reference}")
+    }
 }
 
 fn footnote_id(group: &str, name: Option<&str>, index: usize) -> String {
@@ -236,6 +270,17 @@ mod tests {
         assert_eq!(references.entries()[0].count, 2);
         let html = format!("{:?}", references.render(""));
         assert!(html.contains("cite_note-a"), "{html}");
+    }
+
+    #[test]
+    fn numbers_citations_within_each_group() {
+        let mut references = References::new();
+        let a_first = references.cite("a", None, text("a"));
+        let b_first = references.cite("b", None, text("b"));
+        let a_second = references.cite("a", None, text("c"));
+        assert!(format!("{a_first:?}").contains("[1]"));
+        assert!(format!("{b_first:?}").contains("[1]"));
+        assert!(format!("{a_second:?}").contains("[2]"));
     }
 
     #[test]

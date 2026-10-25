@@ -118,11 +118,124 @@ fn gallery_lists_its_files() {
 }
 
 #[test]
-fn noinclude_is_dropped() {
+fn noinclude_text_is_shown_when_the_page_is_read() {
     assert_eq!(
         html("keep<noinclude>docs</noinclude>").trim(),
-        "<p>keep</p>"
+        "<p>keepdocs</p>"
     );
+}
+
+#[test]
+fn includeonly_text_is_only_transcluded() {
+    let template = "<noinclude>docs</noinclude><includeonly>body</includeonly>";
+    let transcluded = html_with_templates("{{card}}", &[("card", template)]);
+    assert_eq!(transcluded.trim(), "<p>body</p>");
+
+    let page = html(template);
+    assert_eq!(page.trim(), "<p>docs</p>");
+}
+
+#[test]
+fn a_block_level_wrapper_may_span_lines() {
+    let output = html("<div style=\"border:1px\">\ntext\n</div>");
+    assert!(output.contains("<div style=\"border:1px\">"), "{output}");
+    assert!(output.contains("<p>text</p>"), "{output}");
+    assert!(!output.contains("&lt;div"), "{output}");
+    assert!(!output.contains("&lt;/div&gt;"), "{output}");
+}
+
+#[test]
+fn a_wrapper_left_open_on_a_line_stays_markup() {
+    let output = html("<div class=\"outer\"><div class=\"inner\">x</div>");
+    assert!(output.contains("<div class=\"outer\">"), "{output}");
+    assert!(!output.contains("&lt;div"), "{output}");
+}
+
+#[test]
+fn a_block_wrapper_may_close_after_text() {
+    // Templates write `{{{caption|…}}}</div>`: the closer follows text, so the
+    // line-local builder sees no opener and used to escape it.
+    let output = html("<div class=\"box\">\ncaption</div>\nafter");
+    assert!(output.contains("<div class=\"box\">"), "{output}");
+    assert!(!output.contains("&lt;/div"), "{output}");
+    let close = output.find("</div>").expect("a real closing tag");
+    let after = output.find("after").expect("the following line");
+    assert!(close < after, "{output}");
+    assert_eq!(
+        output.matches("<div").count(),
+        output.matches("</div>").count(),
+        "{output}"
+    );
+}
+
+#[test]
+fn nested_wrappers_close_after_their_text() {
+    let source = "<div class=\"outer\">\n<div class=\"inner\">\ntext</div>\n<div class=\"rest\">\nmore\n</div></div>";
+    let output = html(source);
+    assert!(!output.contains("&lt;/div"), "{output}");
+    assert_eq!(
+        output.matches("<div").count(),
+        output.matches("</div>").count(),
+        "{output}"
+    );
+    let rest = output.find("<div class=\"rest\">").expect("rest wrapper");
+    let more = output.find("more").expect("rest text");
+    assert!(rest < more, "{output}");
+}
+
+#[test]
+fn a_right_aligned_image_floats_inside_its_wrapper() {
+    let output = html("<div class=\"box\">\n[[File:A.png|right|200px|link=]]\nText\n</div>");
+    assert!(
+        output.contains("<img src=\"/images/A.png\" alt=\"\" width=\"200\" class=\"floatright\">"),
+        "{output}"
+    );
+    // A picture alone on its line is a block, not a paragraph.
+    assert!(!output.contains("<p><img"), "{output}");
+    let image = output.find("<img").expect("image");
+    let text = output.find("<p>Text").expect("text");
+    assert!(image < text, "{output}");
+}
+
+#[test]
+fn deeply_nested_include_markers_keep_their_content() {
+    // The marker scan keeps a suppression counter rather than testing its open
+    // stack for every marker; nesting depth must not change the result.
+    let depth = 2000;
+    let kept = format!(
+        "{}keep{}",
+        "<noinclude>".repeat(depth),
+        "</noinclude>".repeat(depth)
+    );
+    let page = html(&kept);
+    assert!(page.contains("keep"), "{page}");
+    assert!(!page.contains("noinclude"), "{page}");
+
+    let hidden = format!(
+        "{}hidden{}",
+        "<includeonly>".repeat(depth),
+        "</includeonly>".repeat(depth)
+    );
+    assert!(!html(&hidden).contains("hidden"));
+}
+
+#[test]
+fn an_image_link_parameter_controls_the_anchor() {
+    let plain = html("[[File:A.png]]");
+    assert!(
+        plain.contains("<a class=\"image\" href=\"/wiki/File%3AA.png\">"),
+        "{plain}"
+    );
+
+    let unlinked = html("[[File:A.png|180px|link=]]");
+    assert!(
+        unlinked.contains("<img src=\"/images/A.png\""),
+        "{unlinked}"
+    );
+    assert!(!unlinked.contains("<a"), "{unlinked}");
+
+    let linked = html("[[File:A.png|link=Main Page]]");
+    assert!(linked.contains("href=\"/wiki/Main_Page\""), "{linked}");
 }
 
 #[test]
@@ -335,6 +448,17 @@ fn adversarial_pages_never_panic() {
         std::hint::black_box(&html);
     }
 }
+#[test]
+fn unmatched_block_closers_do_not_scan_the_open_stack() {
+    // Without the per-name count, every `</div>` after a stack of `<p>` raws
+    // scanned the whole stack, which is quadratic in the number of tags.
+    let source = format!("{}{}", "<p>\n".repeat(20_000), "</div>\n".repeat(20_000));
+    assert!(
+        compile_time(&source) < std::time::Duration::from_secs(2),
+        "unmatched closers scan the open stack again"
+    );
+}
+
 #[test]
 fn many_tags_stay_linear() {
     // Two separate lookups used to scan per tag: the block stack was searched by

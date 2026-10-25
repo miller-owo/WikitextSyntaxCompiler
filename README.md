@@ -184,11 +184,15 @@ $ wikitext --language de page.wikitext
 - Quote state machine for `''`, `'''` and `'''''`, including uneven pairings such
   as `''a'''b''`, and without misfiring on `it's`
 - HTML tags, paired, self-closing and void, with quoted attributes and values
-  containing `>`
+  containing `>`. A block-level tag at the start of a line is written through as
+  raw HTML, so `<div style="…">` on one line and its `</div>` many lines later
+  produce the wrapper the source describes instead of escaped text
 - Character entities: named table, `&#…;`, `&#x…;`, Windows-1252 C1 remapping
 - `<nowiki>`, `<pre>`, HTML comments
 - Links: `[[Page]]`, `[[Page|label]]`, pipe trick `[[Foo (bar)|]]`,
-  `[[Category:…]]` collection, `[[File:…]]` with captions, and `[url label]`
+  `[[Category:…]]` collection, `[[File:…]]` with captions, sizes, `alt=`, `class=`
+  and `link=` (with no value, the image is not wrapped in an anchor), and
+  `[url label]`
 
 ### Parser functions and magic words
 
@@ -217,8 +221,11 @@ Magic words: `PAGENAME` `FULLPAGENAME` `BASEPAGENAME` `SUBPAGENAME`
   `mw-highlight-lang-…`.
 - `<math>`, `<chem>` and `<ce>` are wrapped in a `data-mw-ext` marker for a
   front-end renderer to pick up.
-- `<noinclude>` and `<includeonly>` content is dropped from the rendered page,
-  and `<templatedata>`, `<indicator>` and `<categorytree>` render empty.
+- `<noinclude>` and `<includeonly>` follow the direction the page is read in: a
+  page shows its `<noinclude>` text and hides `<includeonly>`, while a transcluded
+  template body keeps `<includeonly>` and drops `<noinclude>`. The markers are
+  removed before expansion, so they may span lines. `<templatedata>`, `<indicator>`
+  and `<categorytree>` render empty.
 
 ### Not implemented
 

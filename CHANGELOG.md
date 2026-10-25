@@ -6,7 +6,32 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Multi-line block HTML.** A line that starts with a block-level tag opens a raw
+  element that later lines fill, so the inline parser cannot balance it against its
+  closer. `<div style="…">` on a line of its own, and its `</div>` many lines later,
+  used to be escaped as text; both are now written through as raw HTML, the way
+  MediaWiki writes them, while the text between them is still parsed as wikitext.
+  This is what makes a flex-column banner template render as the banner it describes.
+- **Closing tags after text.** A block closer that follows text, as in
+  `{{{caption|…}}}</div>`, is now written through and the paragraph is flushed
+  around it. It used to be escaped as text, leaving the wrapper open for the rest of
+  the page.
+- **Image alignment.** `right` and `left` on an image now become MediaWiki's
+  `floatright`/`floatleft` classes, and a picture alone on a line is emitted as a
+  block instead of a paragraph, so a template's float layout renders in place.
+- **`[[File:…|link=]]`.** The `link=` parameter is honoured: a value names the
+  target page, and no value leaves the image unwrapped instead of adding the default
+  file-page anchor.
+
+### Changed
+
+- **`<noinclude>` and `<includeonly>` follow the reading direction.** A page shows
+  its `<noinclude>` text and hides `<includeonly>`, while a transcluded template body
+  keeps `<includeonly>` and drops `<noinclude>`. Both markers are removed before
+  expansion, so they may span lines, and a template's documentation panel no longer
+  disappears when the template page itself is previewed.
 
 ## [0.1.0]
 

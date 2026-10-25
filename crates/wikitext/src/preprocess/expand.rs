@@ -432,7 +432,10 @@ impl<'a> Expander<'a> {
         if let Some(title) = &self.options.title {
             frame.title = title.clone();
         }
-        let mut body = body.to_string();
+        // The template page and the page that pulls it in disagree about which
+        // half of `<noinclude>` / `<includeonly>` exists, so the body is reduced
+        // before anything inside it is expanded.
+        let mut body = super::resolve_include_tags(body, super::IncludeContext::Transclusion);
         self.expand_in_place(&mut body, &frame, depth + 1);
         body
     }

@@ -479,7 +479,13 @@ pub fn scan_entity(source: &str) -> Option<EntitySpan> {
         return None;
     }
 
-    let limit = source.len().min(34);
+    // Entity names are ASCII, but the source around them may not be: a 34-byte
+    // window can end in the middle of a multi-byte character. Back the limit up
+    // to the nearest character boundary before slicing.
+    let mut limit = source.len().min(34);
+    while limit > 0 && !source.is_char_boundary(limit) {
+        limit -= 1;
+    }
     let window = &source[..limit];
     let semicolon = window.find(';')?;
     if semicolon < 2 {

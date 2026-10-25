@@ -15,6 +15,13 @@ pub struct ParseContext {
     source_len: usize,
     source: String,
     nesting: usize,
+    // Block-level HTML tags opened as raw markup on an earlier line. Their
+    // closing tag may sit after text on a later line, where the line-local
+    // builder cannot see the opener.
+    html_blocks: Vec<&'static str>,
+    // How many open entries each name has. A closer with no entry is ignored in
+    // O(1), instead of scanning the whole stack for every unmatched `</div>`.
+    html_block_counts: HashMap<&'static str, usize>,
 }
 
 // Nesting beyond this is markup that has run away rather than markup anyone
@@ -32,7 +39,40 @@ impl ParseContext {
             nesting: 0,
             source_len: 0,
             source: String::new(),
+            html_blocks: Vec::new(),
+            html_block_counts: HashMap::new(),
         }
+    }
+
+    fn push_html_block(&mut self, name: &'static str) {
+        if !crate::dom::is_void(name) {
+            self.html_blocks.push(name);
+            *self.html_block_counts.entry(name).or_insert(0) += 1;
+        }
+    }
+
+    // Returns whether a matching block was open. Closing one implicitly closes
+    // any still-open block above it, which is how the browser reads the markup.
+    fn close_html_block(&mut self, name: &str) -> bool {
+        if self.html_block_counts.get(name).copied().unwrap_or(0) == 0 {
+            return false;
+        }
+        let Some(position) = self.html_blocks.iter().rposition(|open| *open == name) else {
+            return false;
+        };
+        // Every entry removed by the truncation leaves the count, so a later
+        // unmatched closer never scans for a name that is not there.
+        for index in position..self.html_blocks.len() {
+            let open = self.html_blocks[index];
+            if let Some(count) = self.html_block_counts.get_mut(open) {
+                *count -= 1;
+                if *count == 0 {
+                    self.html_block_counts.remove(open);
+                }
+            }
+        }
+        self.html_blocks.truncate(position);
+        true
     }
 
     fn warn(&mut self, code: DiagnosticCode, message: impl Into<String>, offset: usize) {
@@ -71,6 +111,8 @@ pub fn parse(source: &str, options: &Options) -> Document {
 
 pub fn parse_with_context(source: &str, context: &mut ParseContext) {
     context.source_len = source.len();
+    context.html_blocks.clear();
+    context.html_block_counts.clear();
 
     let source = source.strip_prefix('\u{feff}').unwrap_or(source);
     context.source = source.to_string();
@@ -184,7 +226,7 @@ impl BlockParser<'_, '_> {
                     let consumed = self.scanner.next_line().expect("peeked");
                     let tokens = lex::lex_inline(consumed.content);
                     let nodes = self.parse_inline(&tokens);
-                    paragraph.push_nodes(nodes);
+                    self.push_inline_nodes(&mut paragraph, nodes);
                 }
             }
         }
@@ -193,19 +235,69 @@ impl BlockParser<'_, '_> {
         paragraph.flush(self.context);
     }
 
+    fn push_inline_nodes(&mut self, paragraph: &mut Paragraph, nodes: Vec<Node>) {
+        let mut pending: Vec<Node> = Vec::new();
+        for node in nodes {
+            if is_raw_block_close(&node) {
+                if !pending.is_empty() {
+                    paragraph.push_nodes(core::mem::take(&mut pending));
+                }
+                paragraph.flush(self.context);
+                self.context.document.push(node);
+            } else {
+                pending.push(node);
+            }
+        }
+        // A picture alone on a line is a block in MediaWiki, not a paragraph:
+        // wrapping it in `<p>` moves it out of the place the template expects.
+        if paragraph.is_empty() && !pending.is_empty() && pending.iter().all(is_media_node) {
+            paragraph.flush(self.context);
+            for node in pending {
+                self.context.document.push(node);
+            }
+            return;
+        }
+        paragraph.push_nodes(pending);
+    }
+
     fn flush_list(&mut self, list: &mut Option<ListState>) {
         let Some(mut state) = list.take() else {
             return;
         };
-        for frame in &mut state.frames {
-            if let ListFrame::Item(element) = frame {
-                if let Some(Node::Text(text)) = element.children.first().cloned() {
-                    element.children.remove(0);
-                    element.children = self.parse_inline_text(&text);
-                }
-            }
+        // An item keeps its source text as its only child until the list ends,
+        // but an item is attached below the outermost list as soon as the next
+        // one starts. Walking just the still-open frames therefore missed every
+        // finished item, leaving its inline markup (`'''bold'''`, links, …) as
+        // literal text. Parse each open frame's subtree instead, which covers
+        // both the attached items and the one that is still open.
+        for index in 0..state.frames.len() {
+            let element = state.frames[index].element_mut();
+            self.parse_item_text(element);
         }
         state.finish(self.context);
+    }
+
+    // Replace an item's raw text child with parsed inline nodes. Nested children
+    // (deeper lists) are kept and visited too.
+    fn parse_item_text(&mut self, element: &mut Element) {
+        if matches!(
+            element.kind,
+            ElementKind::UnorderedItem
+                | ElementKind::OrderedItem
+                | ElementKind::TermItem
+                | ElementKind::DefinitionItem
+        ) {
+            if let Some(Node::Text(text)) = element.children.first().cloned() {
+                element.children.remove(0);
+                let nodes = self.parse_inline_text(&text);
+                element.children.splice(0..0, nodes);
+            }
+        }
+        for child in &mut element.children {
+            if let Node::Element(child_element) = child {
+                self.parse_item_text(child_element);
+            }
+        }
     }
 
     fn heading(&mut self, line: Line<'_>, offset: usize) {
@@ -275,7 +367,7 @@ impl BlockParser<'_, '_> {
     fn html_block(&mut self) {
         let line = self.scanner.next_line().expect("peeked");
         let tokens = lex::lex_inline(line.content);
-        let nodes = self.parse_inline(&tokens);
+        let nodes = self.parse_inline_html_block(&tokens);
         for node in nodes {
             self.context.document.push(node);
         }
@@ -452,12 +544,25 @@ impl BlockParser<'_, '_> {
     }
 
     fn parse_inline(&mut self, tokens: &[Token]) -> Vec<Node> {
+        self.parse_inline_in(tokens, false)
+    }
+
+    // A line that begins with a block-level HTML tag is raw HTML to the browser:
+    // `<div style="…">` opens an element that later lines fill, and `</div>` on a
+    // line of its own closes it. The tag cannot be balanced against its closer
+    // here, so it is emitted verbatim instead of becoming literal text.
+    fn parse_inline_html_block(&mut self, tokens: &[Token]) -> Vec<Node> {
+        self.parse_inline_in(tokens, true)
+    }
+
+    fn parse_inline_in(&mut self, tokens: &[Token], html_block: bool) -> Vec<Node> {
         let mut builder = InlineBuilder {
             tokens,
             index: 0,
             context: self.context,
             open_tags: HashMap::new(),
             closers_ahead: InlineBuilder::closer_counts(tokens),
+            html_block,
         };
         builder.run()
     }
@@ -484,6 +589,10 @@ struct Paragraph {
 }
 
 impl Paragraph {
+    fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     fn push_nodes(&mut self, nodes: Vec<Node>) {
         if nodes.is_empty() {
             return;
@@ -508,6 +617,21 @@ impl Paragraph {
                 .with_children(nodes),
         ));
     }
+}
+
+fn is_raw_block_close(node: &Node) -> bool {
+    let Node::Raw(raw) = node else {
+        return false;
+    };
+    let raw = raw.trim_start();
+    if !raw.starts_with("</") {
+        return false;
+    }
+    scan::scan_tag(raw).is_some_and(|tag| scan::is_block_tag(tag.name))
+}
+
+fn is_media_node(node: &Node) -> bool {
+    matches!(node, Node::Element(element) if element.kind == ElementKind::Image)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -593,6 +717,12 @@ enum ListFrame {
 
 impl ListFrame {
     fn into_element(self) -> Element {
+        match self {
+            ListFrame::List(element, _) | ListFrame::Item(element) => element,
+        }
+    }
+
+    fn element_mut(&mut self) -> &mut Element {
         match self {
             ListFrame::List(element, _) | ListFrame::Item(element) => element,
         }
@@ -780,6 +910,9 @@ struct InlineBuilder<'t, 'c> {
     // remaining tokens per opener is linear per tag, and a page whose tags are
     // never closed has one opener for every token.
     closers_ahead: HashMap<&'static str, usize>,
+    // The line starts with a block-level HTML tag, so block tags belong to the
+    // surrounding document rather than to this line.
+    html_block: bool,
 }
 
 impl<'t, 'c> InlineBuilder<'t, 'c> {
@@ -789,6 +922,20 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
         self.run_into_stack(&mut stack, &mut out);
 
         while let Some(block) = stack.pop() {
+            // An HTML-block line may leave a block tag open, e.g. a wrapper that
+            // starts and ends inside a line that also opens its parent. That is
+            // markup the following lines will fill, not a broken tag.
+            if self.html_block {
+                if let DelimiterKind::Tag(name) = block.opened_by {
+                    if scan::is_block_tag(name) {
+                        let source = self.tag_source_at(block.open_index);
+                        self.context.push_html_block(name);
+                        out.push(Node::Raw(source));
+                        out.extend(block.children);
+                        continue;
+                    }
+                }
+            }
             append_literalised(block, &mut out);
         }
         out
@@ -956,7 +1103,15 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
     ) {
         if !self.has_tag_closer_ahead(name) {
             let source = self.tag_source_at(self.index);
-            push_text_node(self.top_children(stack, out), &source);
+            // In an HTML block the tag is part of the page's own markup, so it
+            // is written through. Anywhere else an unmatched opener would be a
+            // broken document, and keeping it as text is the recovery.
+            if self.html_block && scan::is_block_tag(name) {
+                self.context.push_html_block(name);
+                self.top_children(stack, out).push(Node::Raw(source));
+            } else {
+                push_text_node(self.top_children(stack, out), &source);
+            }
             self.index += 1;
             return;
         }
@@ -993,8 +1148,22 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
                 self.close_block(position, stack, out);
             }
             None => {
-                let literal = source.to_string();
-                push_text_node(self.top_children(stack, out), &literal);
+                // A block closer may belong to a wrapper opened on an earlier
+                // line. That is valid HTML wherever it appears, even when it
+                // follows text (`caption</div>`), so write it through instead
+                // of escaping it as text.
+                if scan::is_block_tag(name) && self.context.close_html_block(name) {
+                    self.top_children(stack, out)
+                        .push(Node::Raw(source.to_string()));
+                } else if self.html_block && scan::is_block_tag(name) {
+                    // A stray closer on an HTML-block line stays markup, as the
+                    // browser ignores a close with nothing open.
+                    self.top_children(stack, out)
+                        .push(Node::Raw(source.to_string()));
+                } else {
+                    let literal = source.to_string();
+                    push_text_node(self.top_children(stack, out), &literal);
+                }
             }
         }
         self.index += 1;
@@ -1170,21 +1339,29 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
 
     fn href_for(&self, target: &str) -> String {
         let options = &self.context.options;
-        let encoded = encode_title(target);
+        // A `#` in a link target is a fragment separator, not part of the page
+        // title. Encoding it turned `[[Page#Section]]` into a link to a page
+        // literally named "Page#Section", so section links could never work.
+        let (page, fragment) = match target.split_once('#') {
+            Some((page, fragment)) => (page, Some(fragment)),
+            None => (target, None),
+        };
+        let encoded_page = encode_title(page);
+        let encoded = match fragment {
+            Some(fragment) => {
+                let fragment = encode_title(fragment);
+                if encoded_page.is_empty() {
+                    // `[[#Section]]` is an anchor in the current document.
+                    return format!("#{fragment}");
+                }
+                format!("{encoded_page}#{fragment}")
+            }
+            None => encoded_page,
+        };
         options.article_path.replace("$1", &encoded)
     }
 
     fn image(&mut self, name: &str, options: &ImageOptions) -> Node {
-        let mut anchor = Element::new("a");
-        anchor.add_class("image");
-        anchor.set_attr(
-            "href",
-            match &options.link {
-                Some(link) if !link.is_empty() => link.clone(),
-                _ => self.href_for(&format!("File:{name}")),
-            },
-        );
-
         let mut img = Element::new("img");
         img.set_attr("src", self.image_url(name));
         img.set_attr("alt", options.alt.clone().unwrap_or_default());
@@ -1195,27 +1372,74 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
             img.set_attr("height", height.to_string());
         }
         img.kind = crate::dom::ElementKind::Image;
-        anchor.children.push(Node::element(img));
 
-        match &options.caption {
+        // `link=` names the page the image links to; written with no value it
+        // means the image is not a link at all, which is how a template puts a
+        // picture inside its own clickable layout without adding a second one.
+        let mut media = match &options.link {
+            Some(link) if link.is_empty() => Node::element(img),
+            Some(link) => {
+                // A named target is a page title unless it is already a URL or
+                // an anchor of its own.
+                let href = if link.contains("://") || link.starts_with('/') || link.starts_with('#')
+                {
+                    link.clone()
+                } else {
+                    self.href_for(link)
+                };
+                let mut anchor = Element::new("a");
+                anchor.add_class("image");
+                anchor.set_attr("href", href);
+                anchor.children.push(Node::element(img));
+                Node::element(anchor)
+            }
+            None => {
+                let mut anchor = Element::new("a");
+                anchor.add_class("image");
+                anchor.set_attr("href", self.href_for(&format!("File:{name}")));
+                anchor.children.push(Node::element(img));
+                Node::element(anchor)
+            }
+        };
+
+        let mut node = match &options.caption {
             Some(caption) => {
                 let mut figure = Element::new("figure");
                 if let Some(class) = &options.class {
                     figure.add_class(class);
                 }
-                figure.children.push(Node::element(anchor));
+                figure.children.push(media);
                 let mut figcaption = Element::new("figcaption");
                 figcaption.children = self.parse_inline_text(caption);
                 figure.children.push(Node::element(figcaption));
                 Node::element(figure)
             }
             None => {
-                if let Some(class) = &options.class {
-                    anchor.add_class(class);
+                if let (Some(class), Node::Element(element)) = (&options.class, &mut media) {
+                    element.add_class(class);
                 }
-                Node::element(anchor)
+                media
+            }
+        };
+
+        // `right` and `left` are layout options, not captions: a template puts
+        // a picture in a div corner with them. The preview stylesheet supplies
+        // MediaWiki's own float classes.
+        if let Some(align) = options.align {
+            if let Node::Element(element) = &mut node {
+                element.add_class(match align {
+                    ImageAlign::Right => "floatright",
+                    ImageAlign::Left => "floatleft",
+                });
             }
         }
+
+        // The outermost node identifies a block picture, so a line that holds
+        // only this picture is not wrapped in a paragraph.
+        if let Node::Element(element) = &mut node {
+            element.kind = ElementKind::Image;
+        }
+        node
     }
 
     fn image_url(&self, name: &str) -> String {
@@ -1401,6 +1625,7 @@ impl<'t, 'c> InlineBuilder<'t, 'c> {
             context: self.context,
             open_tags: HashMap::new(),
             closers_ahead: InlineBuilder::closer_counts(&tokens),
+            html_block: false,
         };
         let nodes = builder.run();
         self.context.nesting -= 1;
@@ -1570,6 +1795,12 @@ fn namespace_of(target: &str, options: &Options) -> Namespace {
     Namespace::Other
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ImageAlign {
+    Right,
+    Left,
+}
+
 #[derive(Default, Clone, Debug)]
 struct ImageOptions {
     alt: Option<String>,
@@ -1578,6 +1809,7 @@ struct ImageOptions {
     class: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    align: Option<ImageAlign>,
 }
 
 fn parse_image_options(parts: &[LinkPart], _options: &Options) -> ImageOptions {
@@ -1609,9 +1841,11 @@ fn parse_image_options(parts: &[LinkPart], _options: &Options) -> ImageOptions {
                 }
                 let lower = value.to_ascii_lowercase();
                 match lower.as_str() {
-                    "thumb" | "thumbnail" | "frame" | "frameless" | "border" | "right" | "left"
-                    | "center" | "centre" | "none" | "baseline" | "sub" | "super" | "top"
-                    | "text-top" | "middle" | "bottom" | "text-bottom" | "upright" => {}
+                    "right" => result.align = Some(ImageAlign::Right),
+                    "left" => result.align = Some(ImageAlign::Left),
+                    "thumb" | "thumbnail" | "frame" | "frameless" | "border" | "center"
+                    | "centre" | "none" | "baseline" | "sub" | "super" | "top" | "text-top"
+                    | "middle" | "bottom" | "text-bottom" | "upright" => {}
                     _ => {
                         if let Some((width, height)) = parse_pixel_size(value) {
                             result.width = Some(width);
